@@ -50,3 +50,9 @@ A data source is just a function that fetches and shapes:
 Save it as `dvergr/intake/my_source.clj` (namespace `dvergr.intake.my-source`), `(require
 '[dvergr.intake.my-source] :reload)`, call it, `git commit`. To pull in more libraries,
 `git clone` them with the `git`/`bash` tools — this is a normal project.
+
+## License
+
+Copyright © 2026 Christian Weilbach. Apache License 2.0 — see [LICENSE](LICENSE).
+Matches [dvergr](https://github.com/replikativ/dvergr) and the wider replikativ
+stack, so code moves freely between this workspace and dvergr in either direction.
