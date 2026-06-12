@@ -1,0 +1,5 @@
+;; Your workspace is a normal Clojure project. The sandbox loads `.clj` files
+;; from here by namespace (e.g. intake.hn -> intake/hn.clj). Add deps and
+;; `git clone` libraries with the git/bash tools to extend it.
+{:paths ["."]
+ :deps {}}

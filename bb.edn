@@ -1,0 +1,5 @@
+;; This workspace is a babashka-style Clojure project. The sandbox preloads the
+;; real libraries (babashka.fs, babashka.http-client, cheshire.core,
+;; clojure.data.xml, datahike.api, …) under their real names — see README.md.
+{:paths ["."]
+ :deps  {}}

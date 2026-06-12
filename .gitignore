@@ -1,0 +1,10 @@
+target/
+.cpcache/
+*.log
+.dvergr/
+
+# editor/tooling caches
+.clj-kondo/.cache/
+.lsp/.cache/
+.clj-kondo/
+.lsp/
