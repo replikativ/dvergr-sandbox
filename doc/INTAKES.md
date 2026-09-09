@@ -44,3 +44,21 @@ Read-only world sources in `dvergr/intake/`. Use them with
 
 It's built over `babashka.http-client` + `cheshire.core` — read it; a new intake
 needs nothing more.
+
+## Search and fetch provenance
+
+`web-search/search` and `web-fetch/fetch-page` preserve optional host-provided
+`:dvergr/acquisition` and `:dvergr/fixture-id` markers on their result maps,
+including HTTP and parsing/extraction errors. In a recording-enabled Dvergr
+room, `(get-in result [:dvergr/acquisition :id])` identifies the acquisition.
+No receipt is invented when the host is not recording.
+
+Search receipts identify search responses, not the pages they link to. Fetch
+pages separately for source evidence. A fetch receipt refers to the original
+HTTP body; returned `:text` may have HTML removed or be truncated. These markers
+support provenance checks, not automatic proof that an extracted claim is true.
+Fixture-backed responses describe a simulation, not live web observations.
+
+Run the offline intake contract tests with `bb test`. HTTP is stubbed; test-only
+`env` and codec namespaces stand in for injected host primitives. These tests
+do not validate the host HTML parser or contact any provider.

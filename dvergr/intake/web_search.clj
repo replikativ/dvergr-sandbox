@@ -45,6 +45,9 @@
      {:query Q :results [{:title :url :description :age :site-name} ...]}  ;; success
      {:query Q :error  ERR}                                               ;; failure
 
+   Preserves optional :dvergr/acquisition and :dvergr/fixture-id from HTTP,
+   including on HTTP/JSON errors. Cite the acquisition :id for search provenance.
+
    Options:
      :count      Number of results (1–50, default 5)
      :freshness  pd (24h), pw (week), pm (month), py (year)
@@ -61,10 +64,15 @@
                             {:query-params params
                              :headers      {"Accept"               "application/json"
                                             "X-Subscription-Token" api-key}
-                             :timeout      30000})
-          body    (:body resp)
-          body    (if (string? body) (json/decode body true) body)]
-      {:query query :results (parse-results body)})
+                             :timeout      30000 :throw false})
+          base (merge {:query query} (intake/response-provenance resp))]
+      (if (not= 200 (:status resp))
+        (assoc base :error (str "Brave API error: HTTP " (:status resp)) :status (:status resp))
+        (try
+          (let [body (:body resp)
+                body (if (string? body) (json/decode body true) body)]
+            (assoc base :results (parse-results body)))
+          (catch Throwable e (assoc base :error (.getMessage e))))))
     (catch Throwable e
       {:query query
        :error (or (some->> (:status (ex-data e)) (str "Brave API error: HTTP "))
