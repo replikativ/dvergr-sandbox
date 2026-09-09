@@ -2,4 +2,6 @@
 ;; real libraries (babashka.fs, babashka.http-client, cheshire.core,
 ;; clojure.data.xml, datahike.api, …) under their real names — see README.md.
 {:paths ["."]
- :deps  {}}
+ :deps  {}
+ :tasks {test {:extra-paths ["test"]
+               :task (load-file "test/runner.clj")}}}

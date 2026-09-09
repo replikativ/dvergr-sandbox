@@ -9,6 +9,13 @@
 
 (def user-agent "dvergr/1.0 (intake)")
 
+(defn response-provenance
+  "Preserve optional host acquisition and fixture markers when reshaping HTTP.
+   These identify the original response, not proof that extracted text supports
+   a claim. Missing markers are never synthesized by intake code."
+  [response]
+  (select-keys response [:dvergr/acquisition :dvergr/fixture-id]))
+
 (defn fetch-json
   "GET `url`, return parsed JSON (keyword keys) or {:error \"…\"}.
    kwargs: :headers :query-params :timeout (ms, default 15000)."
