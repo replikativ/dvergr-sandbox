@@ -29,6 +29,11 @@ A source is just a fn that fetches + shapes. Start from `dvergr/intake/hn.clj`
 (simplest) or `dvergr/intake/arxiv.clj` (parses XML). `(require '[dvergr.intake.core
 :as intake])` gives you `fetch-json` / `fetch-text`.
 
+For cited research, retain full search/fetch responses and their acquisition
+receipts. `dvergr.intake.evidence/quote-span` selects exact text without IO;
+see [`doc/EVIDENCE.md`](doc/EVIDENCE.md) for a search → fetch → evidence example.
+It constructs evidence claims, not trusted verification.
+
 ## Getting more code
 
 - **Source you'll read/edit** — `git clone` a repo into the workspace and require it
