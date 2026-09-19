@@ -2,7 +2,8 @@
   "Lobste.rs via JSON API (no auth). GET JSON, reshape the stories. Copy this
    to build your own tag-filtered feed intake."
   (:require [dvergr.intake.core :as intake]
-            [dvergr.intake.schema :as schema]))
+            [dvergr.intake.schema :as schema]
+            [clojure.string :as str]))
 
 (def ^:private base-url "https://lobste.rs")
 
@@ -14,7 +15,8 @@
 
 (defn- parse-story [story]
   {:title     (:title story)
-   :url       (or (:url story) (:comments_url story))
+   :url       (let [u (:url story)]              ; text posts have :url ""
+                (if (str/blank? u) (:comments_url story) u))
    :score     (:score story)
    :comments  (:comment_count story)
    :tags      (:tags story)

@@ -142,9 +142,13 @@
                       :category    (:category filing)
                       :type        (:type filing)
                       :description (:description filing)
-                      :url         (when-let [links (:links filing)]
-                                     (str "https://find-and-update.company-information.service.gov.uk"
-                                          (:document_metadata links)))})))))))
+                      ;; document_metadata is already absolute in the live API
+                      ;; (https://frontend-doc-api...); prefix only relative paths.
+                      :url         (when-let [doc (get-in filing [:links :document_metadata])]
+                                     (if (re-find #"^https?://" doc)
+                                       doc
+                                       (str "https://find-and-update.company-information.service.gov.uk"
+                                            doc)))})))))))
 
 (defn fetch-persons-significant-control
   "Get persons with significant control (PSC) — beneficial owners."

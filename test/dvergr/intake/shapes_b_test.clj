@@ -120,6 +120,8 @@
   (let [story {:title "T" :url "" :comments_url "https://lobste.rs/s/abc" :score 5
                :comment_count 2 :tags ["clojure"] :submitter_user "alice"}]
     (is (true? (valid lobsters/Story (#'lobsters/parse-story story))))
+    (is (= "https://lobste.rs/s/abc" (:url (#'lobsters/parse-story story))) "blank :url falls back to comments_url")
+    (is (= "https://x.example/a" (:url (#'lobsters/parse-story (assoc story :url "https://x.example/a")))))
     (is (true? (valid lobsters/Story (#'lobsters/parse-story {}))))
     (is (true? (valid (schema/result lobsters/Story) [(#'lobsters/parse-story story)])))
     (is (not (m/validate lobsters/Story (assoc (#'lobsters/parse-story story) :tags "clojure"))) "not vacuous")))
@@ -131,11 +133,16 @@
     (let [status {:content "<p>Hello<br/>world</p>" :url "https://fosstodon.org/@a/1"
                   :favourites_count 3 :reblogs_count nil :replies_count 1}
           link   {:title "L" :url "https://x.example" :description "d"
-                  :history [{:day "1700000000" :uses "3" :accounts "2"}]}]
+                  :history [{:day "1700000000" :uses "3" :accounts "2"}
+                            {:day "1699913600" :uses "5" :accounts "4"}]}]
       (is (true? (valid mastodon/Status (#'mastodon/parse-status status))))
       (is (true? (valid mastodon/Status (#'mastodon/parse-status {}))))
       (is (true? (valid mastodon/Link (#'mastodon/parse-link link))))
+      (is (= 8 (:score (#'mastodon/parse-link link))) "score sums :uses over history")
       (is (true? (valid mastodon/Link (#'mastodon/parse-link (dissoc link :history)))))
+      (is (= 0 (:score (#'mastodon/parse-link (dissoc link :history)))))
+      (is (not (m/validate mastodon/Link (assoc (#'mastodon/parse-link link) :score (:history link))))
+          "history vector is not a score")
       (is (not (m/validate mastodon/Status (assoc (#'mastodon/parse-status status) :score nil))) "not vacuous"))))
 
 ;; --- rss ---
@@ -156,13 +163,36 @@
     (is (= "https://b.example/e" (-> (#'rss/parse-xml-feed atom-xml) :items first :url)))
     (is (not (m/validate rss/Feed {:feed-title "x" :items [{:tags "clj"}]})) "not vacuous")))
 
+(deftest rss-discover-feeds-returns-vectors
+  (let [html "<html><head><title>x</title></head></html>"
+        feed-schema (-> #'rss/discover-feeds meta :malli/schema last)]
+    (testing "probe fallback"
+      (with-redefs [intake/fetch-text (fn [url & _]
+                                        (cond (= url "https://b.example/post") html
+                                              (= url "https://b.example/feed") "<rss/>"
+                                              :else {:error "HTTP 404"}))]
+        (let [feeds (rss/discover-feeds "https://b.example/post")]
+          (is (vector? feeds))
+          (is (= ["https://b.example/feed"] (map :url feeds)))
+          (is (true? (valid feed-schema feeds))))))
+    (testing "nothing found"
+      (with-redefs [intake/fetch-text (fn [url & _] (if (= url "https://b.example/post") html {:error "HTTP 404"}))]
+        (let [feeds (rss/discover-feeds "https://b.example/post")]
+          (is (= [] feeds))
+          (is (vector? feeds)))))
+    (is (not (m/validate feed-schema (list {:url "u" :title nil :type "probe"}))) "a seq is not a vector")))
+
 ;; --- sec-edgar ---
 
 (deftest sec-edgar-shapes-match
   (let [fact {:val 100 :end "2025-12-31" :filed "2026-02-01" :fp "FY" :form "10-K"}]
     (with-redefs [intake/fetch-json
                   (fetch-stub [["companyfacts" {:entityName "Acme"
-                                                :facts {:us-gaap {:Revenues {:units {:USD [fact]}}
+                                                :facts {:dei {:EntityCommonStockSharesOutstanding
+                                                              {:units {:shares [{:val 15000000000 :filed "2026-02-01"}]}}
+                                                              :EntityNumberOfEmployees
+                                                              {:units {:pure [{:val 161000 :filed "2026-02-01"}]}}}
+                                                        :us-gaap {:Revenues {:units {:USD [fact]}}
                                                                   :Assets {:units {:USD [(assoc fact :fp "Q3")]}}}}}]
                                ["submissions" {:name "Acme" :sic "3571" :sicDescription "Computers"
                                                :stateOfIncorporation "DE" :fiscalYearEnd "1231"
@@ -176,11 +206,20 @@
                                                                          :form "10-K" :sics ["3571"]}}
                                                               {:_source {:ciks ["0000320193"]}}]}}]])]
       (is (true? (valid (schema/result sec/Company) (sec/search-companies "acme"))))
-      (is (true? (valid (schema/one sec/CompanyFacts) (sec/fetch-company-facts 320193))))
+      (let [facts (sec/fetch-company-facts 320193)]
+        (is (true? (valid (schema/one sec/CompanyFacts) facts)))
+        (is (= 161000 (get-in facts [:employees :val])) "employees from dei/EntityNumberOfEmployees, not share count"))
       (is (true? (valid (schema/one sec/Filings) (sec/fetch-filings "320193" :filing-type "10-K"))))
       (is (not (m/validate sec/CompanyFacts (assoc (sec/fetch-company-facts 320193) :cik 320193))) "not vacuous"))
-    ;; Insider trades read :hits as a flat vector.
     (with-redefs [intake/fetch-json
-                  (fetch-stub [["search-index" {:hits [{:_source {:display_names ["Doe Jane"] :file_date "2026-01-02"
-                                                                  :file_type "4" :entity_name "Acme" :entity_id "320193"}}]}]])]
-      (is (true? (valid (schema/result sec/InsiderTrade) (sec/fetch-insider-trades "acme")))))))
+                  (fetch-stub [["companyfacts" {:entityName "Acme" :facts {:us-gaap {}}}]])]
+      (is (nil? (:employees (sec/fetch-company-facts 320193))) "no dei employee count -> nil"))
+    ;; Insider trades: EDGAR full-text search nests hits as {:hits {:hits [...]}}.
+    (with-redefs [intake/fetch-json
+                  (fetch-stub [["search-index" {:hits {:total {:value 1}
+                                                       :hits [{:_source {:display_names ["Doe Jane"] :file_date "2026-01-02"
+                                                                         :file_type "4" :entity_name "Acme" :entity_id "320193"}}]}}]])]
+      (let [trades (sec/fetch-insider-trades "acme")]
+        (is (true? (valid (schema/result sec/InsiderTrade) trades)))
+        (is (= 1 (count trades)))
+        (is (= ["Doe Jane"] (:filer (first trades))))))))

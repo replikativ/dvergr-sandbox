@@ -37,14 +37,16 @@
    [:url [:maybe schema/Url]] [:datetime [:maybe :int]] [:category [:maybe :string]]])
 
 (def InsiderTransaction
-  "One insider transaction."
+  "One insider transaction; :transaction-type is Finnhub's transactionCode, the
+   SEC Form 4 code (\"P\" purchase, \"S\" sale, \"M\" option exercise, ...)."
   [:map [:name [:maybe :string]] [:share [:maybe Num]] [:change [:maybe Num]]
    [:transaction-price [:maybe Num]] [:transaction-type [:maybe :string]]
    [:filing-date [:maybe schema/IsoDate]]])
 
 (def BasicFinancials
-  "Selected basic financial metrics; every value may be absent."
-  (into [:map] (for [k [:pe-annual :pb-annual :ps-annual :ev-ebitda :dividend-yield :roe :roa
+  "Selected basic financial metrics; every value may be absent. :ev-fcf is
+   current enterprise value / annual free cash flow (currentEv/freeCashFlowAnnual)."
+  (into [:map] (for [k [:pe-annual :pb-annual :ps-annual :ev-fcf :dividend-yield :roe :roa
                         :gross-margin :operating-margin :net-margin :revenue-growth-3y
                         :revenue-growth-5y :eps-growth-3y :eps-growth-5y :52-week-high
                         :52-week-low :beta :market-cap]]
@@ -156,7 +158,7 @@
                     :share             (:share t)
                     :change            (:change t)
                     :transaction-price (:transactionPrice t)
-                    :transaction-type  (:transactionType t)
+                    :transaction-type  (:transactionCode t)
                     :filing-date       (:filingDate t)}))))))
 
 (defn fetch-peers
@@ -177,7 +179,7 @@
         {:pe-annual         (get m :peBasicExclExtraTTM)
          :pb-annual         (get m :pbAnnual)
          :ps-annual         (get m :psAnnual)
-         :ev-ebitda         (get m :currentEv/freeCashFlowAnnual)
+         :ev-fcf            (get m :currentEv/freeCashFlowAnnual)
          :dividend-yield    (get m :dividendYieldIndicatedAnnual)
          :roe               (get m :roeTTM)
          :roa               (get m :roaTTM)

@@ -33,10 +33,15 @@
                                    :text "see https://example.org/post"
                                    :created_at "Wed Sep 17 10:00:00 +0000 2026"
                                    :author {:name "Alice" :screen_name "alice"}
-                                   :entities {:urls [{:expanded_url "https://example.org/post"}]}}})]
+                                   :entities {:urls [{:expanded_url "https://example.org/post"}
+                                                     {:expanded_url "https://t.co/AbC123"}
+                                                     {:expanded_url "https://chat.com/share/1"}
+                                                     {:expanded_url "https://reddit.com/r/x/t.co?x=1"}]}}})]
     (let [t (twitter/lookup-tweet "https://x.com/alice/status/1234567890123")]
       (is (true? (valid twitter/Tweet t)))
-      (is (= ["https://example.org/post"] (:links t)))))
+      (is (= ["https://example.org/post" "https://chat.com/share/1" "https://reddit.com/r/x/t.co?x=1"]
+             (:links t))
+          "only host-exactly-t.co links are dropped")))
   (with-redefs [intake/fetch-json (fn [& _] {:code 404 :message "NOT_FOUND"})]
     (is (true? (valid (schema/one twitter/Tweet) (twitter/lookup-tweet "1234567890123")))))
   (is (true? (valid (schema/one twitter/Tweet) (twitter/lookup-tweet "not a tweet"))))
@@ -49,7 +54,11 @@
 
 (deftest wayback-shapes-match
   (with-redefs [http/get (fn [& _] {:status 200 :body cdx-body})]
-    (is (true? (valid (schema/result wayback/CdxSnapshot) (wayback/search-snapshots "example.org"))))
+    (let [rows (wayback/search-snapshots "example.org")]
+      (is (true? (valid (schema/result wayback/CdxSnapshot) rows)))
+      (is (= #{:urlkey :timestamp :original :mimetype :statuscode :digest :length}
+             (set (keys (first rows))))
+          "raw CDX keys, as the docstring says"))
     (let [versions (wayback/track-changes "example.org")]
       (is (= 2 (count versions)))
       (is (true? (valid (schema/result wayback/Version) versions)))))
@@ -185,17 +194,40 @@
       (is (nil? (inbox/recent)))
       (is (nil? (inbox/search "x")))
       (is (nil? (inbox/unread)))))
-  (testing "shapes built from query tuples (datahike.api/q redefined)"
-    (let [d1 #inst "2026-09-01T10:00:00Z" d2 #inst "2026-09-02T10:00:00Z"]
+  (testing "shapes built from pulled entities (datahike.api/q redefined)"
+    (let [d1 #inst "2026-09-01T10:00:00Z" d2 #inst "2026-09-02T10:00:00Z"
+          msgs [{:db/id 10 :mail.message/uid 1 :mail.message/subject "Hello"
+                 :mail.message/from "Alice <a@x>" :mail.message/date d1}
+                {:db/id 11 :mail.message/uid 2 :mail.message/subject "Invoice"
+                 :mail.message/from "Bob <b@x>" :mail.message/date d2 :mail.message/flags #{:seen}}
+                ;; same attributes as uid 2 but a distinct entity: must not collapse
+                {:db/id 12 :mail.message/uid 2 :mail.message/subject "Invoice"
+                 :mail.message/from "Bob <b@x>" :mail.message/date d2}
+                ;; no subject / from / date: must still be returned
+                {:db/id 13 :mail.message/uid 3}]
+          ;; Evaluate the query just enough: a pull find over every entity with a
+          ;; uid, dropping :seen ones when the query has a `not` clause.
+          q-stub (fn [query _]
+                   (let [[pull-expr] (rest (take-while #(not= :where %) query))
+                         pattern (last pull-expr)
+                         unread? (some #(and (seq? %) (= 'not (first %))) query)]
+                     (assert (and (seq? pull-expr) (= 'pull (first pull-expr))) "query pulls entities")
+                     (set (for [m msgs
+                                :when (not (and unread? (contains? (:mail.message/flags m) :seen)))]
+                            [(select-keys m pattern)]))))]
       (binding [dvergr.mail/*inbox* (atom :db)]
-        (with-redefs [datahike.api/q (fn [query _]
-                                       (case (count (take-while #(not= :where %) query))
-                                         5 #{[1 "Hello" "Alice <a@x>" d1] [2 "Invoice" "Bob <b@x>" d2]}
-                                         4 #{[1 "Hello" "Alice <a@x>"] [2 "Invoice" "Bob <b@x>"]}
-                                         3 #{[2 "Invoice"]}))]
+        (with-redefs [datahike.api/q q-stub]
           (is (true? (inbox/attached?)))
-          (is (= [2 1] (map :uid (inbox/recent))))
-          (is (true? (valid [:vector inbox/InboxMessage] (inbox/recent :limit 5))))
+          (let [rs (inbox/recent)]
+            (is (= [2 2 1 3] (map :uid rs)) "every message once, newest first, undated last")
+            (is (= {:uid 3 :subject nil :from nil :date nil} (last rs)))
+            (is (true? (valid [:vector inbox/InboxMessage] rs))))
+          (is (= 2 (count (inbox/recent :limit 2))))
           (is (true? (valid [:vector inbox/MessageSummary] (inbox/search "alice"))))
-          (is (true? (valid [:vector inbox/UnreadMessage] (inbox/unread))))))))
+          (is (= [1] (map :uid (inbox/search "alice"))))
+          (is (= [2 2] (map :uid (inbox/search "INVOICE"))))
+          (let [un (inbox/unread)]
+            (is (= #{2 3 1} (set (map :uid un))))
+            (is (= 3 (count un)))
+            (is (true? (valid [:vector inbox/UnreadMessage] un))))))))
   (is (not (m/validate inbox/InboxMessage {:uid 1 :subject "s" :from "f" :date "2026-09-01"})) "not vacuous"))

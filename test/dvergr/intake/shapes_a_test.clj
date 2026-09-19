@@ -103,7 +103,8 @@
                     {:items [{:date "2024-05-01" :category "accounts" :type "AA"
                               :description "accounts-with-accounts-type-full"
                               :links {:self "/company/00000006/filing-history/MzA"
-                                      :document_metadata "/document/abc"}}
+                                      :document_metadata "https://frontend-doc-api.company-information.service.gov.uk/document/abc"}}
+                             {:date "2023-06-01" :links {:document_metadata "/document/rel"}}
                              {:date "2023-05-01"}]}
                     (re-find #"/persons-with-significant-control" url)
                     {:items [{:name "Mr John Smith" :kind "individual-person-with-significant-control"
@@ -121,7 +122,13 @@
     (is (true? (valid (schema/result ch/CompanySummary) (ch/search-companies "marine"))))
     (is (true? (valid (schema/one ch/Company) (ch/fetch-company "00000006"))))
     (is (true? (valid (schema/result ch/Officer) (ch/fetch-officers "00000006"))))
-    (is (true? (valid (schema/result ch/Filing) (ch/fetch-filing-history "00000006"))))
+    (let [filings (ch/fetch-filing-history "00000006")]
+      (is (true? (valid (schema/result ch/Filing) filings)))
+      (is (= ["https://frontend-doc-api.company-information.service.gov.uk/document/abc"
+              "https://find-and-update.company-information.service.gov.uk/document/rel"
+              nil]
+             (map :url filings))
+          "absolute document_metadata used as-is, relative prefixed"))
     (is (true? (valid (schema/result ch/Psc) (ch/fetch-persons-significant-control "00000006")))))
   (is (not (m/validate ch/Company {:company-number "1"})) "not vacuous"))
 
@@ -187,13 +194,18 @@
                                                            :transactionCode "S" :filingDate "2026-04-03"}]}
                     "/stock/peers" ["AAPL" "DELL" "HPQ"]
                     "/stock/metric" {:metric {:peBasicExclExtraTTM 29.4 :beta 1.24 :52WeekHigh 237.23
-                                              :marketCapitalization 2950000}}))]
+                                              :marketCapitalization 2950000
+                                              :currentEv/freeCashFlowAnnual 31.2}}))]
     (is (true? (valid (schema/one finnhub/Quote) (finnhub/fetch-quote "aapl"))))
     (is (true? (valid (schema/one finnhub/Profile) (finnhub/fetch-company-profile "aapl"))))
     (is (true? (valid (schema/result finnhub/Earning) (finnhub/fetch-earnings "aapl"))))
     (is (true? (valid (schema/result finnhub/NewsArticle) (finnhub/fetch-company-news "aapl"))))
-    (is (true? (valid (schema/result finnhub/InsiderTransaction)
-                      (finnhub/fetch-insider-transactions "aapl"))))
+    (let [txs (finnhub/fetch-insider-transactions "aapl")]
+      (is (true? (valid (schema/result finnhub/InsiderTransaction) txs)))
+      (is (= "S" (:transaction-type (first txs))) "read from transactionCode"))
     (is (true? (valid (schema/result :string) (finnhub/fetch-peers "aapl"))))
-    (is (true? (valid (schema/one finnhub/BasicFinancials) (finnhub/fetch-basic-financials "aapl")))))
+    (let [fin (finnhub/fetch-basic-financials "aapl")]
+      (is (true? (valid (schema/one finnhub/BasicFinancials) fin)))
+      (is (= 31.2 (:ev-fcf fin)))
+      (is (not (contains? fin :ev-ebitda)))))
   (is (not (m/validate finnhub/Quote {:current "189"})) "not vacuous"))
