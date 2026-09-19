@@ -7,6 +7,7 @@
    tree-walk it (see intake/arxiv.clj for the same pattern). Feed autodiscovery
    stays regex-based over the fetched HTML."
   (:require [clojure.data.xml :as xml] [dvergr.intake.core :as intake]
+            [dvergr.intake.schema :as schema]
             [clojure.string :as str]))
 
 (def ^:private browser-ua
@@ -14,6 +15,21 @@
 
 (def ^:private feed-accept
   "application/rss+xml, application/atom+xml, application/xml, text/xml, text/html")
+
+(def FeedLink
+  "A discovered feed; :type is the <link> MIME type, or \"probe\" when found by
+   probing a common path."
+  [:map [:url schema/Url] [:title [:maybe :string]] [:type :string]])
+
+(def Item
+  "One feed <item>/<entry>; each key is present only when found."
+  [:map [:title {:optional true} :string] [:url {:optional true} schema/Url]
+   [:summary {:optional true} :string] [:date {:optional true} :string]
+   [:author {:optional true} :string] [:tags {:optional true} [:vector :string]]])
+
+(def Feed
+  "A parsed feed."
+  [:map [:feed-title [:maybe :string]] [:items [:vector Item]]])
 
 (defn- fetch-raw
   "GET a URL, return body string or {:error}."
@@ -27,6 +43,7 @@
    1. <link rel='alternate' type='application/rss+xml'> in HTML head
    2. Common feed URL patterns (/feed, /rss, /atom.xml, etc.)
    Returns [{:url :title :type}]."
+  {:malli/schema [:=> [:cat schema/Url] [:or [:sequential FeedLink] schema/Error]]}
   [url]
   (let [body (fetch-raw url)]
     (if (:error body)
@@ -175,6 +192,7 @@
 (defn fetch-feed
   "Fetch and parse an RSS/Atom feed.
    Returns {:feed-title :items [{:title :url :summary :date :author :tags}]}."
+  {:malli/schema [:=> [:cat schema/Url (schema/kwargs :count :int)] (schema/one Feed)]}
   [feed-url & {:keys [count] :or {count 20}}]
   (let [body (fetch-raw feed-url)]
     (if (:error body)

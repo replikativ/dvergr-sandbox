@@ -3,9 +3,21 @@
    into plain text. Shows light HTML munging via the `html` primitive +
    str/replace, no host SAX/HTML libs."
   (:require [dvergr.codec :as codec] [dvergr.intake.core :as intake]
+            [dvergr.intake.schema :as schema]
             [clojure.string :as str]))
 
 (def ^:private default-instance "fosstodon.org")
+
+(def Status
+  "One trending status (post), HTML stripped; :title is the text cut to 120 chars."
+  [:map [:title [:maybe :string]] [:url [:maybe schema/Url]] [:score :int]
+   [:comments [:maybe :int]] [:source [:= :mastodon]] [:summary [:maybe :string]]])
+
+(def Link
+  "One trending link. :score is the raw :history (a vector of per-day maps),
+   or 0 when absent."
+  [:map [:title [:maybe :string]] [:url [:maybe schema/Url]]
+   [:score [:or :int [:sequential :any]]] [:source [:= :mastodon]] [:summary [:maybe :string]]])
 
 (defn- strip-html [s]
   (when s
@@ -38,6 +50,8 @@
   "Fetch trending statuses or links from a Mastodon instance.
    kwargs: :instance (default fosstodon.org) :type (\"statuses\"|\"links\")
    :count (max 40). Vector of maps or {:error}."
+  {:malli/schema [:=> [:cat (schema/kwargs :instance :string :type [:enum "statuses" "links"] :count :int)]
+                  [:or [:vector [:or Status Link]] schema/Error]]}
   [& {:keys [instance type count]
       :or {instance default-instance type "statuses" count 20}}]
   (let [url  (str "https://" instance "/api/v1/trends/" type)

@@ -6,9 +6,49 @@
 
    Public fns return RAW data (maps / vectors of maps, or {:error \"…\"})."
   (:require [dvergr.intake.core :as intake]
+            [dvergr.intake.schema :as schema]
             [clojure.string :as str]))
 
 (def ^:private api-base "https://finnhub.io/api/v1")
+
+(def ^:private Num "A JSON number." [:or :int :double])
+
+(def Quote
+  "A stock quote; :timestamp is epoch seconds."
+  [:map [:current [:maybe Num]] [:high [:maybe Num]] [:low [:maybe Num]] [:open [:maybe Num]]
+   [:previous-close [:maybe Num]] [:change [:maybe Num]] [:change-pct [:maybe Num]]
+   [:timestamp [:maybe :int]]])
+
+(def Profile
+  "A company profile; :market-cap is in millions, :ipo a yyyy-MM-dd date."
+  [:map [:name [:maybe :string]] [:country [:maybe :string]] [:exchange [:maybe :string]]
+   [:industry [:maybe :string]] [:market-cap [:maybe Num]] [:shares [:maybe Num]]
+   [:ipo [:maybe schema/IsoDate]] [:logo [:maybe schema/Url]] [:url [:maybe schema/Url]]
+   [:ticker [:maybe :string]] [:currency [:maybe :string]]])
+
+(def Earning
+  "One quarter's earnings, actual vs estimate."
+  [:map [:period [:maybe schema/IsoDate]] [:actual [:maybe Num]] [:estimate [:maybe Num]]
+   [:surprise [:maybe Num]] [:surprise-pct [:maybe Num]] [:symbol [:maybe :string]]])
+
+(def NewsArticle
+  "One company news article; :datetime is epoch seconds."
+  [:map [:headline [:maybe :string]] [:summary [:maybe :string]] [:source [:maybe :string]]
+   [:url [:maybe schema/Url]] [:datetime [:maybe :int]] [:category [:maybe :string]]])
+
+(def InsiderTransaction
+  "One insider transaction."
+  [:map [:name [:maybe :string]] [:share [:maybe Num]] [:change [:maybe Num]]
+   [:transaction-price [:maybe Num]] [:transaction-type [:maybe :string]]
+   [:filing-date [:maybe schema/IsoDate]]])
+
+(def BasicFinancials
+  "Selected basic financial metrics; every value may be absent."
+  (into [:map] (for [k [:pe-annual :pb-annual :ps-annual :ev-ebitda :dividend-yield :roe :roa
+                        :gross-margin :operating-margin :net-margin :revenue-growth-3y
+                        :revenue-growth-5y :eps-growth-3y :eps-growth-5y :52-week-high
+                        :52-week-low :beta :market-cap]]
+                 [k [:maybe Num]])))
 
 (defn- api-key []
   (env/get "FINNHUB_API_KEY"))
@@ -24,6 +64,7 @@
 (defn fetch-quote
   "Get current stock quote for a ticker symbol.
    Returns {:current :high :low :open :previous-close :change :change-pct :timestamp}."
+  {:malli/schema [:=> [:cat :string] (schema/one Quote)]}
   [symbol]
   (let [data (finnhub-get "/quote" :params {:symbol (str/upper-case symbol)})]
     (if (:error data)
@@ -40,6 +81,7 @@
 (defn fetch-company-profile
   "Get company profile for a ticker.
    Returns {:name :country :exchange :industry :market-cap :shares :ipo :logo :url :ticker}."
+  {:malli/schema [:=> [:cat :string] (schema/one Profile)]}
   [symbol]
   (let [data (finnhub-get "/stock/profile2" :params {:symbol (str/upper-case symbol)})]
     (if (:error data)
@@ -61,6 +103,7 @@
 (defn fetch-earnings
   "Get quarterly earnings for a ticker (actual vs estimate).
    Returns [{:period :actual :estimate :surprise :surprise-pct}]."
+  {:malli/schema [:=> [:cat :string (schema/kwargs :count :int)] (schema/result Earning)]}
   [symbol & {:keys [count] :or {count 4}}]
   (let [data (finnhub-get "/stock/earnings" :params {:symbol (str/upper-case symbol)
                                                       :limit count})]
@@ -78,6 +121,7 @@
 (defn fetch-company-news
   "Get recent news articles about a company.
    Returns [{:headline :summary :source :url :datetime :category}]."
+  {:malli/schema [:=> [:cat :string (schema/kwargs :days-back :int :count :int)] (schema/result NewsArticle)]}
   [symbol & {:keys [days-back count]
              :or {days-back 7 count 10}}]
   (let [from-date (intake/days-ago-iso days-back)
@@ -100,6 +144,7 @@
 (defn fetch-insider-transactions
   "Get insider transactions (buys/sells) for a ticker.
    Returns [{:name :share :change :transaction-price :transaction-type :filing-date}]."
+  {:malli/schema [:=> [:cat :string] (schema/result InsiderTransaction)]}
   [symbol]
   (let [data (finnhub-get "/stock/insider-transactions" :params {:symbol (str/upper-case symbol)})]
     (if (:error data)
@@ -116,11 +161,13 @@
 
 (defn fetch-peers
   "Get list of peer/competitor ticker symbols for a company."
+  {:malli/schema [:=> [:cat :string] (schema/result :string)]}
   [symbol]
   (finnhub-get "/stock/peers" :params {:symbol (str/upper-case symbol)}))
 
 (defn fetch-basic-financials
   "Get basic financial metrics (P/E, P/B, margins, growth, etc.) for a ticker."
+  {:malli/schema [:=> [:cat :string] (schema/one BasicFinancials)]}
   [symbol]
   (let [data (finnhub-get "/stock/metric" :params {:symbol (str/upper-case symbol)
                                                     :metric "all"})]

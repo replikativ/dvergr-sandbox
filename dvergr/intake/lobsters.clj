@@ -1,9 +1,16 @@
 (ns dvergr.intake.lobsters
   "Lobste.rs via JSON API (no auth). GET JSON, reshape the stories. Copy this
    to build your own tag-filtered feed intake."
-  (:require [dvergr.intake.core :as intake]))
+  (:require [dvergr.intake.core :as intake]
+            [dvergr.intake.schema :as schema]))
 
 (def ^:private base-url "https://lobste.rs")
+
+(def Story
+  "One Lobste.rs story as `fetch-hottest` returns it."
+  [:map [:title [:maybe :string]] [:url [:maybe schema/Url]] [:score [:maybe :int]]
+   [:comments [:maybe :int]] [:tags [:maybe [:vector :string]]] [:source [:= :lobsters]]
+   [:submitter [:maybe :string]]])
 
 (defn- parse-story [story]
   {:title     (:title story)
@@ -17,6 +24,7 @@
 (defn fetch-hottest
   "Fetch hottest stories, optionally filtered by tag. kwargs: :tag :count.
    Vector of maps or {:error}."
+  {:malli/schema [:=> [:cat (schema/kwargs :tag :string :count :int)] (schema/result Story)]}
   [& {:keys [tag count] :or {count 20}}]
   (let [url  (if tag
                (str base-url "/t/" tag ".json")

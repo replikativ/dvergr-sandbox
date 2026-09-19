@@ -12,7 +12,37 @@
      (intake.linkedin/parse-company-page {:url ... :title ... :text ... :meta ... :linkedin ...})
      (intake.linkedin/parse-profile-page {:url ... :title ... :text ... :meta ...})
      (intake.linkedin/parse-jobs-page {:url ... :title ... :text ...})"
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [dvergr.intake.schema :as schema]))
+
+(def Capture
+  "A raw page capture from the Dvergr Feed browser extension. :meta maps
+   meta-tag names (strings) to contents; :linkedin holds the extension's own
+   extracted data (:companyData :profileData :jobsData :ogTitle :ogDescription)."
+  [:map [:url {:optional true} [:maybe schema/Url]] [:title {:optional true} [:maybe :string]]
+   [:text {:optional true} [:maybe :string]] [:meta {:optional true} [:maybe [:map-of :string :any]]]
+   [:linkedin {:optional true} [:maybe :map]]])
+
+(def Company
+  "A parsed company page. Fields other than :company-name/:url are present only
+   when found; :employee-count/:founded may come verbatim from extension data."
+  [:map [:company-name :string] [:url [:maybe schema/Url]]
+   [:industry {:optional true} :string] [:employee-count {:optional true} :any]
+   [:headquarters {:optional true} :string] [:description {:optional true} :string]
+   [:specialties {:optional true} :string] [:website {:optional true} :string]
+   [:founded {:optional true} :any] [:followers {:optional true} :string]])
+
+(def Profile
+  "A parsed profile page. Fields other than :url are present only when found;
+   :connections may come verbatim from extension data."
+  [:map [:url [:maybe schema/Url]] [:name {:optional true} :string]
+   [:headline {:optional true} :string] [:location {:optional true} :string]
+   [:connections {:optional true} :any]])
+
+(def Job
+  "One job listing, or the title/url fallback when no listings were captured."
+  [:map [:title {:optional true} :string] [:company {:optional true} :string]
+   [:location {:optional true} :string] [:url {:optional true} [:maybe schema/Url]]])
 
 ;; ============================================================================
 ;; Helpers
@@ -82,6 +112,7 @@
    Input: map with :url :title :text :meta :linkedin (from extension)
    Returns: {:company-name :industry :employee-count :headquarters
              :description :specialties :website :founded :followers :url}"
+  {:malli/schema [:=> [:cat Capture] Company]}
   [{:keys [url title text meta linkedin]}]
   (let [company-data (or (:companyData linkedin) {})
         og-title (or (:ogTitle linkedin) (get meta "og:title") "")
@@ -146,6 +177,7 @@
 
    Input: map with :url :title :text :meta :linkedin
    Returns: {:name :headline :company :location :connections :url}"
+  {:malli/schema [:=> [:cat Capture] Profile]}
   [{:keys [url title text meta linkedin]}]
   (let [profile-data (or (:profileData linkedin) {})
         og-title (or (:ogTitle linkedin) (get meta "og:title") "")
@@ -191,6 +223,7 @@
 
    Input: map with :url :title :text :linkedin
    Returns: [{:title :company :location :posted}]"
+  {:malli/schema [:=> [:cat Capture] [:vector Job]]}
   [{:keys [url title text linkedin]}]
   (let [jobs-data (or (:jobsData linkedin) {})
         listings (or (:listings jobs-data) [])]

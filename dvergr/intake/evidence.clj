@@ -2,6 +2,14 @@
   "Pure evidence selection over saved HTTP/intake responses. No IO, mutable
    state, access to audit stores, or authority to certify evidence.")
 
+(def Quote
+  "A selected span: the quote, where it came from, and the response's receipts."
+  [:map [:url {:optional true} [:maybe :string]]
+   [:dvergr/acquisition [:map [:id :uuid]]]
+   [:dvergr/fixture-id {:optional true} :any]
+   [:quote :string]
+   [:selection [:map [:field [:enum :body :text]] [:start :int] [:end :int] [:unit [:= :utf-16]]]]])
+
 (defn quote-span
   "Select an exact, nonempty [start,end) span from response :body or :text.
    Offsets use Clojure string indices (UTF-16 code units). Returns :quote,
@@ -14,6 +22,7 @@
    stored body. A span of extracted/truncated :text is NOT a span of the original
    HTTP :body. Supplied values/markers remain untrusted claims; host verification
    must check scope, acquisition, extraction provenance and claim support."
+  {:malli/schema [:=> [:cat :map [:enum :body :text] :int :int] Quote]}
   [response field start end]
   (let [text (get response field)
         status (:status response)]

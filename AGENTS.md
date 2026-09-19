@@ -34,6 +34,15 @@ receipts. `dvergr.intake.evidence/quote-span` selects exact text without IO;
 see [`doc/EVIDENCE.md`](doc/EVIDENCE.md) for a search → fetch → evidence example.
 It constructs evidence claims, not trusted verification.
 
+## Types
+
+Every public fn here carries a malli function schema as `:malli/schema`
+metadata, and each intake names the shapes it returns (e.g.
+`dvergr.intake.hn/Story`). `(sandbox/doc 'dvergr.intake.hn)` shows them, and
+`malli.core` is loaded, so you can check data: `(m/validate hn/Story x)`,
+`(malli.error/humanize (m/explain hn/Story x))`. Annotate your own fns the
+same way (or with `(m/=> f [:=> ...])`); helpers are in `dvergr.intake.schema`. Prefer keyword types (`:int`, `:string`); quote predicate schemas such as `'inst?` and `'ifn?`, whose sandbox versions malli does not recognize.
+
 ## Getting more code
 
 - **Source you'll read/edit** — `git clone` a repo into the workspace and require it

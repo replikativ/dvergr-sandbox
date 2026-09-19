@@ -11,7 +11,25 @@
 
    PORT-NOTE: the http primitive has no :basic-auth — the Authorization header
    is built by hand with codec/base64-encode."
-  (:require [cheshire.core :as json] [dvergr.codec :as codec] [dvergr.intake.core :as intake]))
+  (:require [cheshire.core :as json] [dvergr.codec :as codec] [dvergr.intake.core :as intake]
+            [dvergr.intake.schema :as schema]))
+
+(def Stream
+  "One public stream as `fetch-streams` returns it (:subscribers only when
+   the server includes them)."
+  [:map [:name :string] [:stream-id :int] [:description :string]
+   [:subscribers [:maybe [:sequential :int]]]])
+
+(def Topic
+  "One topic of a stream as `fetch-topics` returns it."
+  [:map [:name :string] [:max-id :int]])
+
+(def Message
+  "One message as `fetch-messages`/`search-messages` return it. :stream is the
+   stream name, or the recipient list for a direct message; :timestamp is
+   epoch seconds."
+  [:map [:id :int] [:sender :string] [:stream [:or :string [:sequential :map]]]
+   [:topic :string] [:content :string] [:timestamp :int] [:url schema/Url]])
 
 ;; ============================================================================
 ;; Zulip API
@@ -43,6 +61,7 @@
 
 (defn fetch-streams
   "List public Zulip streams (channels). Returns vec of stream maps or {:error ...}."
+  {:malli/schema [:=> [:cat] (schema/result Stream)]}
   []
   (let [data (zulip-get "/streams")]
     (if (:error data)
@@ -57,6 +76,7 @@
 
 (defn fetch-topics
   "List topics in a stream. Returns vec of topic maps or {:error ...}."
+  {:malli/schema [:=> [:cat [:or :int :string]] (schema/result Topic)]}
   [stream-id]
   (let [data (zulip-get (str "/users/me/" stream-id "/topics"))]
     (if (:error data)
@@ -81,6 +101,7 @@
 (defn fetch-messages
   "Fetch recent messages from a stream, optionally filtered by topic.
    Returns vec of message maps or {:error ...}."
+  {:malli/schema [:=> [:cat :string (schema/kwargs :topic :string :count :int)] (schema/result Message)]}
   [stream & {:keys [topic count] :or {count 20}}]
   (let [narrow (cond-> [{"operator" "channel" "operand" stream}]
                  topic (conj {"operator" "topic" "operand" topic}))
@@ -97,6 +118,7 @@
 
 (defn search-messages
   "Search messages across all streams. Returns vec of message maps or {:error ...}."
+  {:malli/schema [:=> [:cat :string (schema/kwargs :stream :string :count :int)] (schema/result Message)]}
   [query & {:keys [stream count] :or {count 20}}]
   (let [narrow (cond-> [{"operator" "search" "operand" query}]
                  stream (conj {"operator" "channel" "operand" stream}))

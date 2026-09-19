@@ -10,6 +10,7 @@
 
    Public fns return RAW data (maps / vectors of maps, or {:error \"…\"})."
   (:require [dvergr.intake.core :as intake]
+            [dvergr.intake.schema :as schema]
             [clojure.string :as str]))
 
 (def ^:private edgar-base "https://data.sec.gov")
@@ -24,6 +25,44 @@
   {"User-Agent" ua-header
    "Accept"     "application/json"})
 
+(def Cik
+  "A CIK, numeric or string (padded to 10 digits internally)."
+  [:or :int :string])
+
+(def Company
+  "One company hit from the full-text search index."
+  [:map [:cik [:maybe :string]] [:name [:maybe :string]] [:file-type [:maybe :string]]
+   [:date [:maybe schema/IsoDate]] [:form [:maybe :string]] [:sic [:maybe :string]]])
+
+(def Fact
+  "The latest raw XBRL fact for a concept ({:val :end :filed :fp :form ...}),
+   or nil when the company does not report it."
+  [:maybe [:map-of :keyword :any]])
+
+(def CompanyFacts
+  "Key XBRL financial metrics of a company."
+  [:map [:entity-name [:maybe :string]] [:cik :string]
+   [:revenue Fact] [:revenue-alt Fact] [:net-income Fact] [:total-assets Fact]
+   [:total-liabilities Fact] [:stockholders-equity Fact] [:eps Fact]
+   [:shares-outstanding Fact] [:employees Fact]
+   [:available-concepts [:sequential :string]]])
+
+(def Filing
+  "One filing of a company."
+  [:map [:form [:maybe :string]] [:date [:maybe schema/IsoDate]] [:accession [:maybe :string]]
+   [:description [:maybe :string]] [:document [:maybe :string]] [:url [:maybe schema/Url]]])
+
+(def Filings
+  "A company's metadata plus its recent filings."
+  [:map [:entity-name [:maybe :string]] [:cik :string] [:sic [:maybe :string]]
+   [:sic-description [:maybe :string]] [:state [:maybe :string]]
+   [:fiscal-year-end [:maybe :string]] [:filings [:vector Filing]]])
+
+(def InsiderTrade
+  "One Form 4 hit; :filer is the raw display-names array."
+  [:map [:filer [:maybe [:vector :string]]] [:date [:maybe schema/IsoDate]]
+   [:form [:maybe :string]] [:company [:maybe :string]] [:url schema/Url]])
+
 (defn- pad-cik
   "Pad CIK to 10 digits with leading zeros."
   [cik]
@@ -34,6 +73,7 @@
   "Search for companies by name or ticker.
    Returns [{:cik :name :file-type :date :form :sic}].
    Uses EDGAR full-text search index which searches filings."
+  {:malli/schema [:=> [:cat :string (schema/kwargs :count :int)] (schema/result Company)]}
   [query & {:keys [count] :or {count 10}}]
   (let [data (intake/fetch-json (str efts-base "/search-index")
                                 :headers headers
@@ -64,6 +104,7 @@
    from the companyfacts API.
 
    cik can be numeric or string (auto-padded to 10 digits)."
+  {:malli/schema [:=> [:cat Cik (schema/kwargs :taxonomy :string)] (schema/one CompanyFacts)]}
   [cik & {:keys [taxonomy]
           :or {taxonomy "us-gaap"}}]
   (let [padded (pad-cik cik)
@@ -106,6 +147,7 @@
 (defn fetch-filings
   "Fetch recent SEC filings for a company by CIK.
    filing-type: '10-K' '10-Q' '8-K' 'DEF 14A' etc. or nil for all."
+  {:malli/schema [:=> [:cat Cik (schema/kwargs :filing-type [:maybe :string] :count :int)] (schema/one Filings)]}
   [cik & {:keys [filing-type count]
           :or {count 10}}]
   (let [padded (pad-cik cik)
@@ -145,6 +187,7 @@
 
 (defn fetch-insider-trades
   "Search for insider trading filings (Form 4) for a company."
+  {:malli/schema [:=> [:cat :string (schema/kwargs :count :int)] (schema/result InsiderTrade)]}
   [company-name & {:keys [count] :or {count 10}}]
   (let [data (intake/fetch-json (str efts-base "/search-index")
                                 :headers headers

@@ -4,7 +4,23 @@
 
    Configuration: BRAVE_API_KEY (or BRAVE_TOKEN) environment variable."
   (:require [babashka.http-client :as http] [cheshire.core :as json] [dvergr.intake.core :as intake]
+            [dvergr.intake.schema :as schema]
             [clojure.string :as str]))
+
+(def SearchResult
+  "One Brave web result as `search` returns it under :results."
+  [:map [:title [:maybe :string]] [:url [:maybe schema/Url]] [:description [:maybe :string]]
+   [:age [:maybe :string]] [:site-name [:maybe :string]]])
+
+(def SearchResponse
+  "What `search` returns: the query with :results, or with an :error (plus
+   :status on a non-200 response). Both carry the optional host provenance
+   markers :dvergr/acquisition and :dvergr/fixture-id."
+  [:or
+   [:map [:query :string] [:results [:vector SearchResult]]
+    [:dvergr/acquisition {:optional true} :any] [:dvergr/fixture-id {:optional true} :any]]
+   [:map [:query :string] [:error [:maybe :string]] [:status {:optional true} :int]
+    [:dvergr/acquisition {:optional true} :any] [:dvergr/fixture-id {:optional true} :any]]])
 
 (def ^:private brave-api-url
   "https://api.search.brave.com/res/v1/web/search")
@@ -52,6 +68,7 @@
      :count      Number of results (1–50, default 5)
      :freshness  pd (24h), pw (week), pm (month), py (year)
      :country    2-letter country code (default \"US\")"
+  {:malli/schema [:=> [:cat :string (schema/kwargs :count :int :freshness :string :country :string)] SearchResponse]}
   [query & {:keys [count freshness country]
             :or {count 5 country "US"}}]
   (try

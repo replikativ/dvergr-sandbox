@@ -4,9 +4,17 @@
    a {:tag :attrs :content} tree, `(xml/text node)` flattens its text. No SAX,
    no host libs — agent-readable + extendable."
   (:require [clojure.data.xml :as xml] [dvergr.intake.core :as intake]
+            [dvergr.intake.schema :as schema]
             [clojure.string :as str]))
 
 (def ^:private api-base "https://export.arxiv.org/api/query")
+
+(def Paper
+  "One arXiv paper parsed from an Atom <entry>; dates are yyyy-MM-dd."
+  [:map [:id :string] [:title [:maybe :string]] [:summary [:maybe :string]]
+   [:abs-url schema/Url] [:pdf-url [:maybe schema/Url]]
+   [:published [:maybe schema/IsoDate]] [:updated [:maybe schema/IsoDate]]
+   [:authors [:vector :string]] [:categories [:vector :string]]])
 
 (defn- elems [node tag] (filter #(and (map? %) (= tag (:tag %))) (:content node)))
 (defn- elem  [node tag] (first (elems node tag)))
@@ -43,6 +51,7 @@
 (defn search-papers
   "Search arXiv papers. kwargs: :count (≤100) :sort-by (relevance|lastUpdatedDate|
    submittedDate) :sort-order (descending|ascending) :start. Vector of maps or {:error}."
+  {:malli/schema [:=> [:cat :string (schema/kwargs :count :int :sort-by :string :sort-order :string :start :int)] (schema/result Paper)]}
   [query & {:keys [count sort-by sort-order start]
             :or {count 10 sort-by "relevance" sort-order "descending" start 0}}]
   (parse-feed (intake/fetch-text api-base
@@ -54,6 +63,7 @@
 
 (defn fetch-paper
   "Fetch a single arXiv paper by id (e.g. 2303.08774). One map or {:error}."
+  {:malli/schema [:=> [:cat :string] (schema/one [:maybe Paper])]}
   [arxiv-id]
   (let [clean-id (str/replace arxiv-id #"^https?://arxiv\.org/abs/" "")
         parsed   (parse-feed (intake/fetch-text api-base

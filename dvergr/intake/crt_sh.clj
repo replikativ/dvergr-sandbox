@@ -4,13 +4,30 @@
    certificate records — revealing a company's full digital footprint:
    internal tools, staging environments, product names, acquired domains."
   (:require [dvergr.intake.core :as intake]
+            [dvergr.intake.schema :as schema]
             [clojure.string :as str]))
+
+(def Certificate
+  "One Certificate Transparency log entry; :name holds newline-separated names."
+  [:map [:id [:maybe :int]] [:issuer [:maybe :string]] [:name [:maybe :string]]
+   [:common-name [:maybe :string]] [:not-before [:maybe schema/IsoDate]]
+   [:not-after [:maybe schema/IsoDate]] [:serial [:maybe :string]]
+   [:entry-timestamp [:maybe schema/IsoDate]]])
+
+(def SubdomainAnalysis
+  "Subdomains of a domain, grouped by likely purpose."
+  [:map [:domain :string] [:total :int] [:subdomains [:vector :string]]
+   [:categories [:map-of [:enum :content :api :application :staging :email :cdn :documentation
+                          :commerce :auth :investor-relations :careers :internal :devops
+                          :monitoring :demo :learning :other]
+                 [:vector :string]]]])
 
 (defn search-certificates
   "Search Certificate Transparency logs for certificates matching a domain.
    Use %.domain.com to find all subdomains. kwargs: :count (default 100).
    Returns [{:id :issuer :name :not-before :not-after :entry-timestamp}]
    or {:error}."
+  {:malli/schema [:=> [:cat :string (schema/kwargs :count :int)] (schema/result Certificate)]}
   [query & {:keys [count] :or {count 100}}]
   (let [data (intake/fetch-json "https://crt.sh/"
                                 :query-params {:q query :output "json"}
@@ -32,6 +49,7 @@
 (defn discover-subdomains
   "Discover all subdomains for a domain via Certificate Transparency.
    Returns a sorted vector of unique subdomain names or {:error}."
+  {:malli/schema [:=> [:cat :string] (schema/result :string)]}
   [domain]
   (let [certs (search-certificates (str "%." domain) :count 500)]
     (if (:error certs)
@@ -50,6 +68,7 @@
   "Discover subdomains and categorize them by likely purpose.
    Returns {:domain :total :subdomains :categories {:internal [...] ...}}
    or {:error}."
+  {:malli/schema [:=> [:cat :string] (schema/one SubdomainAnalysis)]}
   [domain]
   (let [subs (discover-subdomains domain)]
     (if (:error subs)

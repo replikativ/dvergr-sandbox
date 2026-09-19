@@ -7,7 +7,17 @@
    redirects; `codec/strip-tags` + `codec/decode-entities` turn a
    page into plain text — no host libs, no regex tag-stripping needed."
   (:require [babashka.http-client :as http] [cheshire.core :as json] [dvergr.codec :as codec]
-            [dvergr.intake.core :as intake] [clojure.string :as str]))
+            [dvergr.intake.core :as intake] [dvergr.intake.schema :as schema] [clojure.string :as str]))
+
+(def Page
+  "What `fetch-page` returns: the page text, or the URL with an :error (plus
+   :status on a non-200 response). Both carry the optional host provenance
+   markers :dvergr/acquisition and :dvergr/fixture-id."
+  [:or
+   [:map [:url schema/Url] [:text :string] [:title [:maybe :string]]
+    [:dvergr/acquisition {:optional true} :any] [:dvergr/fixture-id {:optional true} :any]]
+   [:map [:url schema/Url] [:error [:maybe :string]] [:status {:optional true} :int]
+    [:dvergr/acquisition {:optional true} :any] [:dvergr/fixture-id {:optional true} :any]]])
 
 (def ^:private browser-ua
   "Mozilla/5.0 (X11; Linux x86_64; rv:124.0) Gecko/20100101 Firefox/124.0 (dvergr intake)")
@@ -26,6 +36,7 @@
    Returns {:url :text :title} or {:url :error}, plus optional host
    :dvergr/acquisition and :dvergr/fixture-id. Receipt body is the original HTTP
    text; :text here may have been extracted or truncated."
+  {:malli/schema [:=> [:cat schema/Url (schema/kwargs :max-chars :int)] Page]}
   [url & {:keys [max-chars] :or {max-chars 8000}}]
   (try
     (let [resp (http/get url

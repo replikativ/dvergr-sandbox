@@ -7,7 +7,31 @@
    changes, pricing changes, etc. Built over the sandbox `http`/`json`/`html`
    primitives + `dvergr.intake.core` — no host libs."
   (:require [babashka.http-client :as http] [cheshire.core :as json] [dvergr.codec :as codec] [dvergr.intake.core :as intake]
+            [dvergr.intake.schema :as schema]
             [clojure.string :as str]))
+
+(def CdxSnapshot
+  "One CDX index row as `search-snapshots` returns it: the CDX JSON header
+   fields keywordized, every value a string (timestamp YYYYMMDDHHMMSS)."
+  [:map [:urlkey :string] [:timestamp :string] [:original :string] [:mimetype :string]
+   [:statuscode :string] [:digest :string] [:length :string]])
+
+(def Availability
+  "The closest archived snapshot of a URL, or `{:available false :url ...}`."
+  [:multi {:dispatch :available}
+   [true [:map [:available [:= true]] [:url :string] [:timestamp [:maybe :string]]
+          [:snapshot-url [:maybe schema/Url]] [:status [:maybe :string]]]]
+   [false [:map [:available [:= false]] [:url :string]]]])
+
+(def Snapshot
+  "The text content of one archived snapshot as `fetch-snapshot` returns it."
+  [:map [:url :string] [:timestamp :string] [:snapshot-url schema/Url] [:text :string]
+   [:title [:maybe :string]]])
+
+(def Version
+  "One unique page version as `track-changes` returns it."
+  [:map [:timestamp :string] [:snapshot-url schema/Url] [:digest :string]
+   [:mime-type :string] [:length :string]])
 
 (def ^:private cdx-base "https://web.archive.org/cdx/search/cdx")
 (def ^:private availability-base "https://archive.org/wayback/available")
@@ -23,6 +47,8 @@
    - :count    — max results
    - :collapse — collapse by field (e.g. 'digest' to dedupe identical pages)
    - :filter   — status code filter (e.g. 'statuscode:200')"
+  {:malli/schema [:=> [:cat :string (schema/kwargs :from :string :to :string :count :int :collapse :string :filter :string)]
+                  (schema/result CdxSnapshot)]}
   [url & {:keys [from to count collapse filter]
           :or {count 50}}]
   (let [params (cond-> {:url url
@@ -55,6 +81,7 @@
 (defn check-availability
   "Check if a specific URL has been archived and get the closest snapshot.
    Returns {:available :url :timestamp :snapshot-url} or {:available false}."
+  {:malli/schema [:=> [:cat :string (schema/kwargs :timestamp :string)] (schema/one Availability)]}
   [url & {:keys [timestamp]}]
   (let [params (cond-> {:url url}
                  timestamp (assoc :timestamp timestamp))
@@ -74,6 +101,7 @@
   "Fetch the content of a specific Wayback Machine snapshot.
    timestamp format: YYYYMMDDHHMMSS.
    Returns {:url :timestamp :text :title} or {:error}."
+  {:malli/schema [:=> [:cat :string :string (schema/kwargs :max-chars :int)] (schema/one Snapshot)]}
   [url timestamp & {:keys [max-chars] :or {max-chars 8000}}]
   (let [snapshot-url (str "https://web.archive.org/web/" timestamp "/" url)]
     (try
@@ -109,6 +137,7 @@
   "Get a timeline of how a URL changed over time.
    Uses digest-based deduplication to only show unique page versions.
    Returns [{:timestamp :snapshot-url :digest :mime-type :length}] — one per unique version."
+  {:malli/schema [:=> [:cat :string (schema/kwargs :from :string :to :string :count :int)] (schema/result Version)]}
   [url & {:keys [from to count]
           :or {count 30}}]
   (let [snapshots (search-snapshots url

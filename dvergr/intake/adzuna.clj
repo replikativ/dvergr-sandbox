@@ -6,9 +6,33 @@
 
    Public fns return RAW data (maps / vectors of maps, or {:error \"…\"})."
   (:require [dvergr.intake.core :as intake]
+            [dvergr.intake.schema :as schema]
             [clojure.string :as str]))
 
 (def ^:private api-base "https://api.adzuna.com/api/v1")
+
+(def ^:private Num "A JSON number." [:or :int :double])
+
+(def Job
+  "One job ad as `search-jobs` returns it; keys other than :title :url :created
+   appear only when the API sent the field."
+  [:map [:title [:maybe :string]] [:url [:maybe schema/Url]] [:created [:maybe schema/IsoDate]]
+   [:company {:optional true} [:maybe :string]] [:location {:optional true} :string]
+   [:salary-min {:optional true} Num] [:salary-max {:optional true} Num]
+   [:description {:optional true} :string] [:category {:optional true} [:maybe :string]]
+   [:contract-type {:optional true} :string]])
+
+(def SalaryHistory
+  "Monthly average salaries, sorted by month (\"yyyy-MM\")."
+  [:map [:months [:vector [:map [:month :string] [:salary [:maybe :int]]]]]])
+
+(def CompanyCount
+  "One entry of the top-companies leaderboard."
+  [:map [:company-name [:maybe :string]] [:count [:maybe :int]]])
+
+(def CompanyJobs
+  "Jobs at one company, as `company-jobs` returns them."
+  [:map [:company :string] [:total-count :int] [:jobs [:vector Job]]])
 
 (defn- app-id [] (env/get "ADZUNA_APP_ID"))
 (defn- app-key [] (env/get "ADZUNA_APP_KEY"))
@@ -45,6 +69,7 @@
 
    Returns: [{:title :company :location :salary-min :salary-max
               :description :url :created :category :contract-type}]"
+  {:malli/schema [:=> [:cat :string (schema/kwargs :country :string :location :string :company :string :category :string :salary-min Num :results-per-page :int :page :int :sort-by :string)] (schema/result Job)]}
   [query & {:keys [country location company category salary-min
                    results-per-page page sort-by]
             :or {country "us" results-per-page 10 page 1 sort-by "date"}}]
@@ -92,6 +117,7 @@
      :months   - Number of months (default 12)
 
    Returns: {:months [{:month \"2025-01\" :salary 85000} ...]}"
+  {:malli/schema [:=> [:cat :string (schema/kwargs :country :string :location :string :months :int)] (schema/one SalaryHistory)]}
   [query & {:keys [country location months]
             :or {country "us" months 12}}]
   (let [params (cond-> {:what query
@@ -118,6 +144,7 @@
      :location - Location filter
 
    Returns: [{:company-name :count}]"
+  {:malli/schema [:=> [:cat :string (schema/kwargs :country :string :location :string)] (schema/result CompanyCount)]}
   [query & {:keys [country location]
             :or {country "us"}}]
   (let [params (cond-> {:what query}
@@ -144,6 +171,7 @@
      :results-per-page - Results per page (default 20)
 
    Returns: {:company :total-count :jobs [...]}"
+  {:malli/schema [:=> [:cat :string (schema/kwargs :country :string :results-per-page :int)] (schema/one CompanyJobs)]}
   [company-name & {:keys [country results-per-page]
                    :or {country "us" results-per-page 20}}]
   (let [jobs (search-jobs "" :company company-name
