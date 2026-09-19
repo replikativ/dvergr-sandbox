@@ -5,9 +5,15 @@
    sandbox `http`/`json`/`env` primitives + `dvergr.intake.core` — `http/post` with a
    `:json` body posts JSON and the response body is auto-parsed. No host libs."
   (:require [babashka.http-client :as http] [cheshire.core :as json] [dvergr.intake.core :as intake]
+            [dvergr.intake.schema :as schema]
             [clojure.string :as str]))
 
 (def ^:private pds-base "https://bsky.social")
+
+(def Post
+  "One Bluesky post; :title is the (truncated) text, :score likes + reposts."
+  [:map [:title :string] [:url [:maybe schema/Url]] [:score :int]
+   [:comments [:maybe :int]] [:source [:= :bluesky]]])
 
 ;; Session management — cached, auto-refreshes on 401
 (def ^:private session (atom nil))
@@ -67,6 +73,7 @@
 
 (defn search-posts
   "Search Bluesky posts. Requires auth. Returns a vector of post maps or {:error}."
+  {:malli/schema [:=> [:cat :string (schema/kwargs :count :int :days-back :int)] (schema/result Post)]}
   [query & {:keys [count days-back]
             :or {count 20}}]
   (let [headers (auth-headers)]

@@ -4,9 +4,54 @@
 
    Public fns return RAW data (maps / vectors of maps, or {:error \"…\"})."
   (:require [dvergr.intake.core :as intake]
+            [dvergr.intake.schema :as schema]
             [clojure.string :as str]))
 
 (def ^:private api-base "https://api.github.com")
+
+(def Repo
+  "One repository as the search/trending fns return it."
+  [:map [:title :string] [:url [:maybe schema/Url]] [:score [:maybe :int]]
+   [:source [:= :github]] [:tag [:maybe :string]] [:summary :string]])
+
+(def Release
+  "One release of a repo, body truncated to 300 chars as :summary."
+  [:map [:title :string] [:url [:maybe schema/Url]] [:source [:= :github]]
+   [:summary :string]])
+
+(def User
+  "A GitHub user profile."
+  [:map [:login [:maybe :string]] [:name [:maybe :string]] [:company [:maybe :string]]
+   [:location [:maybe :string]] [:bio [:maybe :string]] [:blog [:maybe :string]]
+   [:twitter [:maybe :string]] [:followers [:maybe :int]] [:following [:maybe :int]]
+   [:public-repos [:maybe :int]] [:url [:maybe schema/Url]]])
+
+(def Contributor
+  "One contributor of a repo."
+  [:map [:login [:maybe :string]] [:contributions [:maybe :int]]
+   [:url [:maybe schema/Url]] [:avatar [:maybe schema/Url]]])
+
+(def CodeHit
+  "One code-search hit."
+  [:map [:path [:maybe :string]] [:repo [:maybe :string]] [:url [:maybe schema/Url]]])
+
+(def Member
+  "One public member of an organization."
+  [:map [:login [:maybe :string]] [:url [:maybe schema/Url]]])
+
+(def Issue
+  "One issue (or pull request) of a repo."
+  [:map [:number [:maybe :int]] [:title [:maybe :string]] [:state [:maybe :string]]
+   [:user [:maybe :string]] [:url [:maybe schema/Url]] [:created [:maybe schema/IsoDate]]
+   [:updated [:maybe schema/IsoDate]] [:comments [:maybe :int]] [:labels [:vector [:maybe :string]]]])
+
+(def RepoDetails
+  "Full details of one repository."
+  [:map [:name [:maybe :string]] [:description [:maybe :string]] [:stars [:maybe :int]]
+   [:forks [:maybe :int]] [:open-issues [:maybe :int]] [:language [:maybe :string]]
+   [:topics [:maybe [:vector :string]]] [:created [:maybe schema/IsoDate]]
+   [:updated [:maybe schema/IsoDate]] [:pushed [:maybe schema/IsoDate]]
+   [:license [:maybe :string]] [:homepage [:maybe :string]] [:url [:maybe schema/Url]]])
 
 (defn- auth-headers []
   (let [token (or (env/get "GITHUB_TOKEN")
@@ -37,6 +82,7 @@
 
 (defn fetch-trending
   "Fetch recently created repos sorted by stars."
+  {:malli/schema [:=> [:cat (schema/kwargs :language :string :topic :string :days-back :int :count :int)] (schema/result Repo)]}
   [& {:keys [language topic days-back count]
       :or {days-back 7 count 20}}]
   (let [date-filter (intake/days-ago-iso days-back)
@@ -58,6 +104,7 @@
 
 (defn fetch-releases
   "Fetch recent releases for specified repos."
+  {:malli/schema [:=> [:cat :string (schema/kwargs :count :int)] [:vector Release]]}
   [repos-str & {:keys [count] :or {count 5}}]
   (let [repos (str/split repos-str #",\s*")]
     (->> repos
@@ -77,6 +124,7 @@
 
 (defn search-repos
   "Search GitHub repositories."
+  {:malli/schema [:=> [:cat :string (schema/kwargs :language :string :sort-by :string :count :int)] (schema/result Repo)]}
   [query & {:keys [language sort-by count]
             :or {sort-by "stars" count 20}}]
   (let [q (str query (when language (str " language:" language)))
@@ -95,6 +143,7 @@
 
 (defn fetch-user
   "Fetch a GitHub user profile."
+  {:malli/schema [:=> [:cat :string] (schema/one User)]}
   [username]
   (let [data (intake/fetch-json (str api-base "/users/" username)
                                 :headers (auth-headers))]
@@ -116,6 +165,7 @@
 
 (defn fetch-contributors
   "Fetch contributors for a repo. Returns [{:login :contributions :url}]."
+  {:malli/schema [:=> [:cat :string (schema/kwargs :count :int)] (schema/result Contributor)]}
   [repo & {:keys [count] :or {count 30}}]
   (let [data (intake/fetch-json (str api-base "/repos/" repo "/contributors")
                                 :headers (auth-headers)
@@ -135,6 +185,7 @@
 (defn search-code
   "Search GitHub code. Returns [{:path :repo :url}].
    Supports :filename filter, e.g. (search-code \"org.example\" :filename \"deps.edn\")."
+  {:malli/schema [:=> [:cat :string (schema/kwargs :language :string :filename :string :count :int)] (schema/result CodeHit)]}
   [query & {:keys [language filename count] :or {count 20}}]
   (let [q (str query
                (when language (str " language:" language))
@@ -156,6 +207,7 @@
 
 (defn fetch-org-members
   "Fetch public members of a GitHub organization."
+  {:malli/schema [:=> [:cat :string (schema/kwargs :count :int)] (schema/result Member)]}
   [org & {:keys [count] :or {count 30}}]
   (let [data (intake/fetch-json (str api-base "/orgs/" org "/members")
                                 :headers (auth-headers)
@@ -170,6 +222,7 @@
 
 (defn fetch-issues
   "Fetch recent issues for a repo."
+  {:malli/schema [:=> [:cat :string (schema/kwargs :state :string :count :int)] (schema/result Issue)]}
   [repo & {:keys [state count] :or {state "open" count 20}}]
   (let [data (intake/fetch-json (str api-base "/repos/" repo "/issues")
                                 :headers (auth-headers)
@@ -196,6 +249,7 @@
 
 (defn fetch-repo-details
   "Fetch full repo details including stats."
+  {:malli/schema [:=> [:cat :string] (schema/one RepoDetails)]}
   [repo]
   (let [data (intake/fetch-json (str api-base "/repos/" repo)
                                 :headers (auth-headers))]

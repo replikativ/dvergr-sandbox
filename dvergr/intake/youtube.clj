@@ -16,7 +16,15 @@
    The transcript XML is parsed by regex (simple <p>/<text> tags), same as the
    native version."
   (:require [babashka.http-client :as http] [cheshire.core :as json] [dvergr.intake.core :as intake]
+            [dvergr.intake.schema :as schema]
             [clojure.string :as str]))
+
+(def Transcript
+  "A video's title and transcript as `get-transcript` returns it. When the
+   video resolves but has no usable captions, the result is instead an `Error`
+   carrying :video-id and :title."
+  [:map [:video-id :string] [:title :string] [:language [:maybe :string]]
+   [:transcript :string]])
 
 ;; ── HTTP helpers ─────────────────────────────────────────────────────────────
 
@@ -60,6 +68,7 @@
 
 (defn extract-video-id
   "Parse a video ID from any YouTube URL format, or return as-is for bare IDs."
+  {:malli/schema [:=> [:cat :string] [:maybe :string]]}
   [url-or-id]
   (or (some-> (re-find #"[?&]v=([A-Za-z0-9_-]+)" url-or-id) second)
       (some-> (re-find #"youtu\.be/([A-Za-z0-9_-]+)" url-or-id) second)
@@ -152,6 +161,7 @@
    Returns {:video-id :title :language :transcript} or {:error ...}.
    When the fetch succeeds, also caches the raw transcript to
    `<workspace>/transcripts/<video-id>.txt` (best-effort, ignored on failure)."
+  {:malli/schema [:=> [:cat :string] (schema/one Transcript)]}
   [url-or-id]
   (let [video-id (extract-video-id url-or-id)]
     (if-not video-id

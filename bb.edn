@@ -4,4 +4,6 @@
 {:paths ["."]
  :deps  {}
  :tasks {test {:extra-paths ["test"]
+               ;; Test-only: the sandbox itself provides malli.
+               :extra-deps {metosin/malli {:mvn/version "0.16.4"}}
                :task (load-file "test/runner.clj")}}}

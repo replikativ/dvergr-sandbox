@@ -5,7 +5,13 @@
    string — you parse it) and `cheshire.core` (JSON). A new intake is just a fn
    that fetches + shapes; copy this pattern. See dvergr/intake/hn.clj."
   (:require [babashka.http-client :as http]
-            [cheshire.core :as json]))
+            [cheshire.core :as json]
+            [dvergr.intake.schema :as schema]))
+
+(def ^:private fetch-kwargs
+  (schema/kwargs :headers [:map-of :string :string]
+                 :query-params [:map-of [:or :keyword :string] :any]
+                 :timeout :int))
 
 (def user-agent "dvergr/1.0 (intake)")
 
@@ -13,12 +19,14 @@
   "Preserve optional host acquisition and fixture markers when reshaping HTTP.
    These identify the original response, not proof that extracted text supports
    a claim. Missing markers are never synthesized by intake code."
+  {:malli/schema [:=> [:cat :map] [:map [:dvergr/acquisition {:optional true} :any] [:dvergr/fixture-id {:optional true} :any]]]}
   [response]
   (select-keys response [:dvergr/acquisition :dvergr/fixture-id]))
 
 (defn fetch-json
   "GET `url`, return parsed JSON (keyword keys) or {:error \"…\"}.
    kwargs: :headers :query-params :timeout (ms, default 15000)."
+  {:malli/schema [:=> [:cat schema/Url fetch-kwargs] [:or :any schema/Error]]}
   [url & {:keys [headers query-params timeout] :or {timeout 15000}}]
   (try
     (let [resp (http/get url (cond-> {:timeout timeout
@@ -34,6 +42,7 @@
 (defn fetch-text
   "GET `url`, return the raw body string or {:error \"…\"}.
    kwargs: :headers :query-params :timeout (ms, default 15000)."
+  {:malli/schema [:=> [:cat schema/Url fetch-kwargs] [:or :string schema/Error]]}
   [url & {:keys [headers query-params timeout] :or {timeout 15000}}]
   (try
     (let [resp (http/get url (cond-> {:timeout timeout
@@ -48,17 +57,20 @@
 ;; date helpers (java.time is allowlisted in the sandbox)
 (defn days-ago-iso
   "ISO date (yyyy-MM-dd) `n` days before today (UTC)."
+  {:malli/schema [:=> [:cat :int] schema/IsoDate]}
   [n]
   (.format (.minusDays (java.time.LocalDate/now java.time.ZoneOffset/UTC) (long n))
            java.time.format.DateTimeFormatter/ISO_LOCAL_DATE))
 
 (defn days-ago-epoch
   "Epoch seconds `n` days ago."
+  {:malli/schema [:=> [:cat :int] :int]}
   [n]
   (.getEpochSecond (.minusSeconds (java.time.Instant/now) (* (long n) 86400))))
 
 (defn format-items
   "Render a vector of {:title :url :score :comments} maps as a markdown list."
+  {:malli/schema [:=> [:cat :string [:sequential [:map [:title [:maybe :string]] [:url {:optional true} [:maybe :string]] [:score {:optional true} [:maybe :int]] [:comments {:optional true} [:maybe :int]]]]] :string]}
   [header items]
   (apply str header "\n"
          (for [{:keys [title url score comments]} items]

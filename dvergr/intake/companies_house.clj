@@ -4,9 +4,40 @@
    Rate limit: 600 requests per 5 minutes.
    Set COMPANIES_HOUSE_API_KEY env var."
   (:require [dvergr.codec :as codec] [dvergr.intake.core :as intake]
+            [dvergr.intake.schema :as schema]
             [clojure.string :as str]))
 
 (def ^:private api-base "https://api.company-information.service.gov.uk")
+
+(def CompanySummary
+  "One company search hit; :address joins the present address parts."
+  [:map [:company-number [:maybe :string]] [:title [:maybe :string]] [:status [:maybe :string]]
+   [:type [:maybe :string]] [:date-of-creation [:maybe schema/IsoDate]] [:address :string]])
+
+(def Company
+  "Full company details; :accounts and :confirmation-statement are the raw API maps."
+  [:map [:company-number [:maybe :string]] [:name [:maybe :string]] [:status [:maybe :string]]
+   [:type [:maybe :string]] [:created [:maybe schema/IsoDate]] [:sic-codes [:maybe [:sequential :string]]]
+   [:address :string] [:accounts [:maybe :map]] [:confirmation-statement [:maybe :map]]
+   [:jurisdiction [:maybe :string]] [:has-charges [:maybe :boolean]]
+   [:has-insolvency-history [:maybe :boolean]]])
+
+(def Officer
+  "One company officer (director, secretary, ...)."
+  [:map [:name [:maybe :string]] [:role [:maybe :string]] [:appointed [:maybe schema/IsoDate]]
+   [:resigned [:maybe schema/IsoDate]] [:nationality [:maybe :string]]
+   [:occupation [:maybe :string]] [:country [:maybe :string]]])
+
+(def Filing
+  "One filing-history entry."
+  [:map [:date [:maybe schema/IsoDate]] [:category [:maybe :string]] [:type [:maybe :string]]
+   [:description [:maybe :string]] [:url [:maybe schema/Url]]])
+
+(def Psc
+  "One person with significant control; :name-elements is the raw API map."
+  [:map [:name [:maybe :string]] [:kind [:maybe :string]]
+   [:natures-of-control [:maybe [:sequential :string]]] [:notified-on [:maybe schema/IsoDate]]
+   [:nationality [:maybe :string]] [:country [:maybe :string]] [:name-elements [:maybe :map]]])
 
 ;; Companies House uses HTTP Basic Auth with the API key as username (no password).
 ;; `(env/get "COMPANIES_HOUSE_AUTH")` returns the PRE-ENCODED `base64(key:)` — for a
@@ -23,6 +54,7 @@
 (defn search-companies
   "Search for UK companies by name.
    Returns [{:company-number :title :status :address :type :date-of-creation}]."
+  {:malli/schema [:=> [:cat :string (schema/kwargs :count :int)] (schema/result CompanySummary)]}
   [query & {:keys [count] :or {count 10}}]
   (if-not (api-key)
     {:error "COMPANIES_HOUSE_API_KEY not set. Get a free key at https://developer.company-information.service.gov.uk/"}
@@ -45,6 +77,7 @@
 
 (defn fetch-company
   "Get full details for a UK company by company number."
+  {:malli/schema [:=> [:cat :string] (schema/one Company)]}
   [company-number]
   (if-not (api-key)
     {:error "COMPANIES_HOUSE_API_KEY not set"}
@@ -70,6 +103,7 @@
 
 (defn fetch-officers
   "Get officers (directors, secretaries) for a UK company."
+  {:malli/schema [:=> [:cat :string (schema/kwargs :count :int)] (schema/result Officer)]}
   [company-number & {:keys [count] :or {count 20}}]
   (if-not (api-key)
     {:error "COMPANIES_HOUSE_API_KEY not set"}
@@ -90,6 +124,7 @@
 
 (defn fetch-filing-history
   "Get filing history for a UK company."
+  {:malli/schema [:=> [:cat :string (schema/kwargs :count :int :category :string)] (schema/result Filing)]}
   [company-number & {:keys [count category]
                      :or {count 10}}]
   (if-not (api-key)
@@ -113,6 +148,7 @@
 
 (defn fetch-persons-significant-control
   "Get persons with significant control (PSC) — beneficial owners."
+  {:malli/schema [:=> [:cat :string] (schema/result Psc)]}
   [company-number]
   (if-not (api-key)
     {:error "COMPANIES_HOUSE_API_KEY not set"}

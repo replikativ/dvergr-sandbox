@@ -17,7 +17,35 @@
    - P414: stock exchange
    - P249: ticker symbol"
   (:require [dvergr.codec :as codec] [dvergr.intake.core :as intake]
+            [dvergr.intake.schema :as schema]
             [clojure.string :as str]))
+
+(def Entity
+  "One `wbsearchentities` hit as `search-entities` returns it."
+  [:map [:id :string] [:label [:maybe :string]] [:description [:maybe :string]]
+   [:url [:maybe schema/Url]]])
+
+(def Fact
+  "One property/value pair of `fetch-company-profile` (:raw is the value's
+   entity URI or literal)."
+  [:map [:property [:maybe :string]] [:value [:maybe :string]] [:raw [:maybe :string]]])
+
+(def Subsidiary
+  "One subsidiary as `fetch-subsidiaries` returns it (:id is the Q-id)."
+  [:map [:id :string] [:name [:maybe :string]] [:country [:maybe :string]]])
+
+(def Competitor
+  "One same-industry company as `fetch-competitors` returns it."
+  [:map [:id :string] [:name [:maybe :string]] [:industry [:maybe :string]]])
+
+(def IndustryCompany
+  "One company as `fetch-industry-companies` returns it."
+  [:map [:id :string] [:name [:maybe :string]] [:country [:maybe :string]]
+   [:employees [:maybe :string]]])
+
+(def Binding
+  "One raw SPARQL result row: variable name -> value string."
+  [:map-of :string [:maybe :string]])
 
 (def ^:private sparql-endpoint "https://query.wikidata.org/sparql")
 
@@ -40,6 +68,7 @@
 (defn search-entities
   "Search Wikidata for entities by name.
    Returns [{:id :label :description :url}]."
+  {:malli/schema [:=> [:cat :string (schema/kwargs :count :int :type :string)] (schema/result Entity)]}
   [query & {:keys [count type] :or {count 10}}]
   (let [url "https://www.wikidata.org/w/api.php"
         params (cond-> {:action "wbsearchentities"
@@ -61,6 +90,7 @@
 (defn fetch-company-profile
   "Fetch structured company data from Wikidata by entity ID (e.g. 'Q312' for Apple).
    Returns key facts: name, industry, HQ, CEO, founded, website, employees, etc."
+  {:malli/schema [:=> [:cat :string] (schema/result Fact)]}
   [entity-id]
   (let [q (str "SELECT ?propLabel ?valueLabel ?value WHERE {
   VALUES ?prop { wdt:P749 wdt:P452 wdt:P159 wdt:P169 wdt:P112 wdt:P856
@@ -80,6 +110,7 @@
 
 (defn fetch-subsidiaries
   "Get all subsidiaries of a company from Wikidata."
+  {:malli/schema [:=> [:cat :string] (schema/result Subsidiary)]}
   [entity-id]
   (let [q (str "SELECT ?subsidiary ?subsidiaryLabel ?countryLabel WHERE {
   ?subsidiary wdt:P749 wd:" entity-id " .
@@ -97,6 +128,7 @@
 
 (defn fetch-competitors
   "Find companies in the same industry as the given entity."
+  {:malli/schema [:=> [:cat :string (schema/kwargs :count :int)] (schema/result Competitor)]}
   [entity-id & {:keys [count] :or {count 30}}]
   (let [q (str "SELECT DISTINCT ?company ?companyLabel ?industryLabel WHERE {
   wd:" entity-id " wdt:P452 ?industry .
@@ -117,6 +149,7 @@
 (defn fetch-industry-companies
   "Find all companies in a specific industry by Wikidata industry entity ID.
    Example industries: Q80228 (cloud computing), Q11661 (IT), Q7397 (software)."
+  {:malli/schema [:=> [:cat :string (schema/kwargs :count :int)] (schema/result IndustryCompany)]}
   [industry-id & {:keys [count] :or {count 50}}]
   (let [q (str "SELECT ?company ?companyLabel ?countryLabel ?employeesLabel WHERE {
   ?company wdt:P452 wd:" industry-id " .
@@ -138,6 +171,7 @@
 (defn custom-sparql
   "Execute an arbitrary SPARQL query against Wikidata.
    Returns raw bindings as maps."
+  {:malli/schema [:=> [:cat :string] (schema/result Binding)]}
   [query]
   (let [results (sparql-query query)]
     (if (:error results)

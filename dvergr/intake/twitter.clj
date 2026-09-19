@@ -4,10 +4,18 @@
 
    Also supports fetching linked URLs from tweet text for deeper content ingestion."
   (:require [dvergr.intake.core :as intake]
+            [dvergr.intake.schema :as schema]
             [clojure.string :as str]))
+
+(def Tweet
+  "One tweet as `lookup-tweet` returns it."
+  [:map [:tweet-id :string] [:author [:maybe :string]] [:handle [:maybe :string]]
+   [:text [:maybe :string]] [:created [:maybe :string]] [:url schema/Url]
+   [:links [:vector :string]]])
 
 (defn extract-tweet-id
   "Parse a tweet ID from a twitter.com/x.com URL or return the string if it's a bare ID."
+  {:malli/schema [:=> [:cat :string] [:maybe :string]]}
   [url-or-id]
   (or (some-> (re-find #"(?:twitter\.com|x\.com)/[^/]+/status/(\d+)" url-or-id) second)
       (when (re-matches #"\d{10,}" url-or-id) url-or-id)))
@@ -24,6 +32,7 @@
 (defn lookup-tweet
   "Fetch tweet data via FXTwitter API.
    Returns {:tweet-id :author :handle :text :created :url :links} or {:error}."
+  {:malli/schema [:=> [:cat :string] (schema/one Tweet)]}
   [url-or-id]
   (let [tweet-id (extract-tweet-id url-or-id)]
     (if-not tweet-id
