@@ -14,10 +14,10 @@
    [:comments [:maybe :int]] [:source [:= :mastodon]] [:summary [:maybe :string]]])
 
 (def Link
-  "One trending link. :score is the raw :history (a vector of per-day maps),
-   or 0 when absent."
+  "One trending link. :score is the total :uses summed over the :history
+   entries (recent days), 0 when absent."
   [:map [:title [:maybe :string]] [:url [:maybe schema/Url]]
-   [:score [:or :int [:sequential :any]]] [:source [:= :mastodon]] [:summary [:maybe :string]]])
+   [:score :int] [:source [:= :mastodon]] [:summary [:maybe :string]]])
 
 (defn- strip-html [s]
   (when s
@@ -39,10 +39,17 @@
    :source   :mastodon
    :summary  (strip-html (:content status))})
 
+(defn- parse-uses
+  "A history entry's :uses — a numeric string in the Mastodon API — as an int, 0 if unparseable."
+  [uses]
+  (cond (int? uses) uses
+        (string? uses) (or (parse-long (str/trim uses)) 0)
+        :else 0))
+
 (defn- parse-link [link]
   {:title   (:title link)
    :url     (:url link)
-   :score   (or (:history link) 0)
+   :score   (reduce + 0 (map (comp parse-uses :uses) (:history link)))
    :source  :mastodon
    :summary (:description link)})
 

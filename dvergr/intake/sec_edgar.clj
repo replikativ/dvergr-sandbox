@@ -59,7 +59,8 @@
    [:fiscal-year-end [:maybe :string]] [:filings [:vector Filing]]])
 
 (def InsiderTrade
-  "One Form 4 hit; :filer is the raw display-names array."
+  "One Form 4 hit (from the nested :hits :hits of the full-text search); :filer
+   is the raw display-names array."
   [:map [:filer [:maybe [:vector :string]]] [:date [:maybe schema/IsoDate]]
    [:form [:maybe :string]] [:company [:maybe :string]] [:url schema/Url]])
 
@@ -101,7 +102,8 @@
 (defn fetch-company-facts
   "Fetch XBRL financial facts for a company by CIK.
    Returns structured financial data (revenue, assets, net income, etc.)
-   from the companyfacts API.
+   from the companyfacts API. :employees is the latest dei
+   EntityNumberOfEmployees fact, nil when the company does not report it.
 
    cik can be numeric or string (auto-padded to 10 digits)."
   {:malli/schema [:=> [:cat Cik (schema/kwargs :taxonomy :string)] (schema/one CompanyFacts)]}
@@ -115,8 +117,10 @@
       (let [entity-name (get data :entityName "Unknown")
             facts-map (get-in data [:facts (keyword taxonomy)] {})
             ;; Extract key financial metrics
-            extract-latest (fn [concept-key & {:keys [prefer-annual?] :or {prefer-annual? false}}]
-                             (when-let [concept (get facts-map concept-key)]
+            dei-map (get-in data [:facts :dei] {})
+            extract-latest (fn [concept-key & {:keys [prefer-annual? facts] :or {prefer-annual? false
+                                                                                   facts facts-map}}]
+                             (when-let [concept (get facts concept-key)]
                                (let [unit-map (get concept :units {})
                                      units (or (get unit-map :USD)
                                                (get unit-map :shares)
@@ -141,7 +145,7 @@
          :stockholders-equity (extract-latest :StockholdersEquity)
          :eps (extract-latest :EarningsPerShareBasic)
          :shares-outstanding (extract-latest :CommonStockSharesOutstanding)
-         :employees (extract-latest :EntityCommonStockSharesOutstanding)
+         :employees (extract-latest :EntityNumberOfEmployees :facts dei-map)
          :available-concepts (take 50 (sort (map name (keys facts-map))))}))))
 
 (defn fetch-filings
@@ -198,7 +202,7 @@
                                                :enddt "2030-01-01"})]
     (if (:error data)
       data
-      (->> (get data :hits [])
+      (->> (get-in data [:hits :hits] [])
            (take count)
            (mapv (fn [hit]
                    (let [src (get hit :_source {})]

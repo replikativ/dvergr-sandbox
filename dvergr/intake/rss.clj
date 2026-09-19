@@ -43,7 +43,7 @@
    1. <link rel='alternate' type='application/rss+xml'> in HTML head
    2. Common feed URL patterns (/feed, /rss, /atom.xml, etc.)
    Returns [{:url :title :type}]."
-  {:malli/schema [:=> [:cat schema/Url] [:or [:sequential FeedLink] schema/Error]]}
+  {:malli/schema [:=> [:cat schema/Url] [:or [:vector FeedLink] schema/Error]]}
   [url]
   (let [body (fetch-raw url)]
     (if (:error body)
@@ -90,7 +90,7 @@
                           vec))]
         (if (seq discovered)
           discovered
-          (or (seq probed) []))))))
+          (or probed []))))))
 
 ;; ── Feed parsing (xml/parse-str tree-walk) ─────────────────────────────────────────
 

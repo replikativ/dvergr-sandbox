@@ -52,7 +52,8 @@
                                       (get-in tweet [:entities :urls]))
                               (keep #(or (:url %) (:expanded_url %)))
                               (remove #(or (str/includes? % "pic.twitter.com")
-                                           (str/includes? % "t.co")))
+                                           ;; only real t.co short links (host exactly t.co)
+                                           (re-find #"(?i)^(https?://)?t\.co(?:[/?#:]|$)" %)))
                               distinct
                               vec)]
               {:tweet-id tweet-id

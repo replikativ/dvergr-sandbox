@@ -39,7 +39,8 @@
 
 (defn search-snapshots
   "Search the Wayback Machine CDX index for snapshots of a URL.
-   Returns [{:timestamp :url :mime-type :status :digest :length}].
+   Returns raw CDX rows [{:urlkey :timestamp :original :mimetype :statuscode
+   :digest :length}], every value a string.
 
    Options:
    - :from     — start date (YYYYMMDD or YYYY)
