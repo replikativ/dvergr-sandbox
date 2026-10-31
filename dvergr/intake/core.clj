@@ -24,7 +24,7 @@
   (select-keys response [:dvergr/acquisition :dvergr/fixture-id]))
 
 (defn fetch-json
-  "GET `url`, return parsed JSON (keyword keys) or {:error \"…\"}.
+  "GET `url`, return eager parsed JSON (keyword keys) or {:error \"…\"}.
    kwargs: :headers :query-params :timeout (ms, default 15000)."
   {:malli/schema [:=> [:cat schema/Url fetch-kwargs] [:or :any schema/Error]]}
   [url & {:keys [headers query-params timeout] :or {timeout 15000}}]
@@ -34,7 +34,10 @@
                                                        "Accept" "application/json"} headers)}
                                query-params (assoc :query-params query-params)))]
       (if (= 200 (:status resp))
-        (json/parse-string (:body resp) true)
+        ;; A top-level JSON array from parse-string is a host LazySeq.
+        ;; Decode it eagerly before passing data into forkable SCI; realizing
+        ;; that opaque host sequence inside SCI is intentionally refused.
+        (json/parse-string-strict (:body resp) true)
         {:error (str "HTTP " (:status resp))}))
     (catch Throwable e
       {:error (or (some->> (:status (ex-data e)) (str "HTTP ")) (.getMessage e))})))

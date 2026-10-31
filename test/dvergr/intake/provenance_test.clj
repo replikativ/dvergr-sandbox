@@ -3,6 +3,8 @@
             [env]
             [babashka.http-client :as http]
             [dvergr.intake.web-search :as search]
+            [dvergr.intake.core :as intake]
+            [dvergr.intake.github :as github]
             [dvergr.intake.web-fetch :as fetch]))
 
 (def markers {:dvergr/acquisition {:id (random-uuid) :capture :captured :body-ref (random-uuid)}
@@ -42,3 +44,22 @@
   (with-redefs [http/get (fn [& _] (throw (ex-info "offline" {})))]
     (is (= {:query "nothing" :error "offline"} (search/search "nothing")))
     (is (= {:url "https://example.org/a" :error "offline"} (fetch/fetch-page "https://example.org/a")))))
+
+
+(deftest fetch-json-returns-eager-arrays-across-the-host-boundary
+  (doseq [[body expected] [["[]" []]
+                          ["[{\"tag_name\":\"v1\",\"nested\":[1,2]}]"
+                           [{:tag_name "v1" :nested [1 2]}]]]]
+    (with-redefs [http/get (fn [& _] {:status 200 :body body})]
+      (let [result (intake/fetch-json "https://example.org/releases")]
+        (is (vector? result))
+        (is (= expected result))
+        (when (seq result) (is (vector? (:nested (first result)))))))))
+
+(deftest github-release-intake-decodes-real-json-arrays
+  (with-redefs [http/get (fn [& _]
+                         {:status 200
+                          :body "[{\"tag_name\":\"v1\",\"html_url\":\"https://example.org/v1\",\"body\":\"Release\"}]"})]
+    (is (= [{:title "one/repo v1" :url "https://example.org/v1" :source :github :summary "Release"}
+            {:title "two/repo v1" :url "https://example.org/v1" :source :github :summary "Release"}]
+           (github/fetch-releases "one/repo,two/repo" :count 1)))))
