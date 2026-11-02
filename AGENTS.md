@@ -17,11 +17,13 @@ map; `README.md` is the capability reference.
 
 ## The primitives are the REAL libraries
 
-The sandbox preloads the libraries you already know, under their real names
-(sandboxed underneath): `babashka.fs`, `slurp`/`spit`, `babashka.http-client`,
-`cheshire.core`, `clojure.data.xml`, `babashka.process`, `datahike.api`, plus
-dvergr's own (`dvergr.room`, `dvergr.mail`, `dvergr.codec`). Require + alias them as
-you would in babashka — `(require '[babashka.fs :as fs])`. Full table in `README.md`.
+The host provides familiar libraries under their real names (sandboxed
+underneath): `babashka.fs`, `slurp`/`spit`, `babashka.http-client`, `cheshire.core`,
+`clojure.data.xml`, `babashka.process`, `datahike.api`, plus dvergr's own
+(`dvergr.room`, `dvergr.mail`, `dvergr.codec`). The installed set and permissions
+depend on the host and Run. Discover them with `sandbox/doc`; require and alias
+installed libraries as in babashka — `(require '[babashka.fs :as fs])`.
+Full table in `README.md`.
 
 ## Writing a data source
 
@@ -33,6 +35,15 @@ For cited research, retain full search/fetch responses and their acquisition
 receipts. `dvergr.intake.evidence/quote-span` selects exact text without IO;
 see [`doc/EVIDENCE.md`](doc/EVIDENCE.md) for a search → fetch → evidence example.
 It constructs evidence claims, not trusted verification.
+
+## Workflows and benchmarks
+
+For reusable tasks, fixtures, checkers, calibrated benchmarks and recursive
+agent work, read [`doc/WORKFLOWS.md`](doc/WORKFLOWS.md). Start with ordinary code;
+evaluation is optional. Discover the host's actual APIs before guessing calls.
+Simmis's `workflow/*` helpers inspect/prepare source; they do not grant scorer
+execution authority. Preserve source evidence and keep gold out of candidate
+inputs, including inherited room history.
 
 ## Types
 
